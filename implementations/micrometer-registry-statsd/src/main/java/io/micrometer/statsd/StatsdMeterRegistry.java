@@ -76,10 +76,7 @@ public class StatsdMeterRegistry extends MeterRegistry {
             default:
                 config().namingConvention(NamingConvention.camelCase);
         }
-        this.publisher = (UnicastProcessor<String>) UnicastProcessor.create(Queues.<String>get(statsdConfig.queueSize()).get())
-            .doOnEach(s -> LOG.debug("micrometer - publisher - onNext: " + s))
-            .doOnError(t -> LOG.error("micrometer - publisher - onError: " + t))
-            .doOnComplete(() -> LOG.error("micrometer - publisher - onComplete"));
+        this.publisher = UnicastProcessor.create(Queues.<String>get(statsdConfig.queueSize()).get());
         gauge("statsd.queue.size", this.publisher, UnicastProcessor::size);
         gauge("statsd.queue.capacity", this.publisher, UnicastProcessor::getBufferSize);
 

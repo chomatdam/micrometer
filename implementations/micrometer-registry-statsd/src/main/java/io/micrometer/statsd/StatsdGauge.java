@@ -21,20 +21,26 @@ import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.util.MeterEquivalence;
 import io.micrometer.core.lang.Nullable;
 import org.reactivestreams.Subscriber;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.publisher.UnicastProcessor;
 
 import java.lang.ref.WeakReference;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.ToDoubleFunction;
 
 public class StatsdGauge<T> extends AbstractMeter implements Gauge, StatsdPollable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(StatsdGauge.class);
+
     private final StatsdLineBuilder lineBuilder;
-    private final Subscriber<String> publisher;
+    private final UnicastProcessor<String> publisher;
 
     private final WeakReference<T> ref;
     private final ToDoubleFunction<T> value;
     private final AtomicReference<Double> lastValue = new AtomicReference<>(Double.NaN);
 
-    StatsdGauge(Meter.Id id, StatsdLineBuilder lineBuilder, Subscriber<String> publisher, @Nullable T obj, ToDoubleFunction<T> value) {
+    StatsdGauge(Meter.Id id, StatsdLineBuilder lineBuilder, UnicastProcessor<String> publisher, @Nullable T obj, ToDoubleFunction<T> value) {
         super(id);
         this.lineBuilder = lineBuilder;
         this.publisher = publisher;
@@ -52,7 +58,11 @@ public class StatsdGauge<T> extends AbstractMeter implements Gauge, StatsdPollab
     public void poll() {
         double val = value();
         if(lastValue.getAndSet(val) != val) {
-            publisher.onNext(lineBuilder.gauge(val));
+            ((Subscriber<String>)publisher
+                .doOnEach(s -> LOG.debug("micrometer - publisher - onNext: " + s))
+                .doOnError(t -> LOG.error("micrometer - publisher - onError: " + t))
+                .doOnComplete(() -> LOG.error("micrometer - publisher - onComplete")))
+                .onNext(lineBuilder.gauge(val));
         }
     }
 
