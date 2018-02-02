@@ -76,8 +76,10 @@ public class StatsdMeterRegistry extends MeterRegistry {
             default:
                 config().namingConvention(NamingConvention.camelCase);
         }
-
-        this.publisher = UnicastProcessor.create(Queues.<String>get(statsdConfig.queueSize()).get());
+        this.publisher = (UnicastProcessor<String>) UnicastProcessor.create(Queues.<String>get(statsdConfig.queueSize()).get())
+            .doOnEach(s -> LOG.debug("micrometer - publisher - onNext: " + s))
+            .doOnError(t -> LOG.error("micrometer - publisher - onError: " + t))
+            .doOnComplete(() -> LOG.error("micrometer - publisher - onComplete"));
         gauge("statsd.queue.size", this.publisher, UnicastProcessor::size);
         gauge("statsd.queue.capacity", this.publisher, UnicastProcessor::getBufferSize);
 
@@ -87,11 +89,6 @@ public class StatsdMeterRegistry extends MeterRegistry {
 
     public void start() {
         LOG.info("micrometer - StatsdMeterRegistry - start()");
-        publisher
-            .doOnEach(s -> LOG.debug("micrometer - publisher - onNext: " + s))
-            .doOnError(t -> LOG.error("micrometer - publisher - onError: " + t))
-            .doOnComplete(() -> LOG.error("micrometer - publisher - onComplete"));
-
         UdpClient.create(statsdConfig.host(), statsdConfig.port())
             .newHandler((in, out) -> out
                 .options(NettyPipeline.SendOptions::flushOnEach)
