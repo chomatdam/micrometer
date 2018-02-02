@@ -23,6 +23,7 @@ import io.micrometer.core.instrument.internal.DefaultMeter;
 import io.micrometer.core.instrument.util.HierarchicalNameMapper;
 import io.micrometer.core.instrument.util.TimeUtils;
 import io.micrometer.core.lang.Nullable;
+import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -58,6 +59,9 @@ public class StatsdMeterRegistry extends MeterRegistry {
 
     public StatsdMeterRegistry(StatsdConfig config, Clock clock) {
         this(config, HierarchicalNameMapper.DEFAULT, clock);
+        Thread.setDefaultUncaughtExceptionHandler((t, e) ->
+            LOG.error("Uncaught exception handler - {}", t, e)
+        );
     }
 
     public StatsdMeterRegistry(StatsdConfig config, HierarchicalNameMapper nameMapper, Clock clock) {
@@ -84,12 +88,19 @@ public class StatsdMeterRegistry extends MeterRegistry {
             start();
     }
 
+    private Publisher<String> getPublisher() {
+        return this.publisher
+            .doOnEach(s -> LOG.debug("micrometer - publisher - onNext: {}", s))
+            .doOnError(t -> LOG.error("micrometer - publisher - onError", t))
+            .doOnComplete(() -> LOG.error("micrometer - publisher - onComplete"));
+    }
+
     public void start() {
         LOG.info("micrometer - StatsdMeterRegistry - start()");
         UdpClient.create(statsdConfig.host(), statsdConfig.port())
             .newHandler((in, out) -> out
                 .options(NettyPipeline.SendOptions::flushOnEach)
-                .sendString(publisher)
+                .sendString(getPublisher())
                 .neverComplete()
             )
             .subscribe(client -> {
