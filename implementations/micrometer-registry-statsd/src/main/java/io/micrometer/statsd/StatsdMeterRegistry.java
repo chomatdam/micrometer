@@ -23,6 +23,8 @@ import io.micrometer.core.instrument.internal.DefaultMeter;
 import io.micrometer.core.instrument.util.HierarchicalNameMapper;
 import io.micrometer.core.instrument.util.TimeUtils;
 import io.micrometer.core.lang.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.Disposables;
 import reactor.core.publisher.Flux;
@@ -43,6 +45,9 @@ import java.util.function.ToLongFunction;
  * @author Jon Schneider
  */
 public class StatsdMeterRegistry extends MeterRegistry {
+
+    private static final Logger LOG = LoggerFactory.getLogger(StatsdMeterRegistry.class);
+
     private final StatsdConfig statsdConfig;
     private final HierarchicalNameMapper nameMapper;
     private final Collection<StatsdPollable> pollableMeters = Collections.synchronizedCollection(new LinkedList<>());
@@ -81,6 +86,12 @@ public class StatsdMeterRegistry extends MeterRegistry {
     }
 
     public void start() {
+        LOG.info("micrometer - StatsdMeterRegistry - start()");
+        publisher
+            .doOnEach(s -> LOG.debug("micrometer - publisher - onNext: " + s))
+            .doOnError(t -> LOG.error("micrometer - publisher - onError: " + t))
+            .doOnComplete(() -> LOG.error("micrometer - publisher - onComplete"));
+
         UdpClient.create(statsdConfig.host(), statsdConfig.port())
             .newHandler((in, out) -> out
                 .options(NettyPipeline.SendOptions::flushOnEach)
@@ -94,14 +105,18 @@ public class StatsdMeterRegistry extends MeterRegistry {
                 meterPoller.replace(Flux.interval(statsdConfig.pollingFrequency())
                     .doOnEach(n -> {
                         synchronized (pollableMeters) {
+                            LOG.debug("micrometer - meterPoller - onNext: " + n);
                             pollableMeters.forEach(StatsdPollable::poll);
                         }
                     })
+                    .doOnError(t -> LOG.error("micrometer - meterPoller - onError: " + t))
+                    .doOnComplete(() -> LOG.error("micrometer - meterPoller - onComplete"))
                     .subscribe());
             });
     }
 
     public void stop() {
+        LOG.info("micrometer - StatsdMeterRegistry - stop()");
         udpClient.dispose();
         meterPoller.dispose();
     }
